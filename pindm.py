@@ -218,7 +218,7 @@ import json
 import base64
 import logging
 from argparse import ArgumentParser, FileType
-from typing import BinaryIO
+from dataclasses import dataclass
 
 # Set up logging
 logging.basicConfig(
@@ -323,6 +323,100 @@ class Exocode:
         return self.source_code_str() + "\n\n" + self.target_vars_str()
 
 
+class Proposal:
+    """
+    Proposal definition
+    -------------------
+
+    :arg lino: The number the code line
+    :arg values: The dictionary of variable names, each associated
+      with its value
+
+    :type lino: int
+    :type values: typing.Dict[str, object]
+    """
+    def __init__(self, lino, **values):
+        self.lino = lino
+        self.__dict__.update(**values)
+
+    @property
+    def data(self):
+        """
+        :returns: Data dict of values proposed for each variable
+        :rtype: typing.Dict[str, object]
+        """
+        return self.__dict__
+
+
+@dataclass
+class Metric:
+    precision = 0
+    recall = 0
+
+
+class ProposalList(list):
+    """
+    List of proposal
+    ----------------
+    """
+    def __init__(self):
+        super().__init__()
+        self.metric = None
+
+    def append(self, elem):
+        """
+        Method to append a new proposal
+
+        :param elem: The new proposal that we want to add
+        :type elem: Proposal
+        """
+        if not isinstance(elem, Proposal):
+            raise ValueError(
+                f"The new element type expected is Proposal, not {type(elem)}")
+        return super().append(elem)
+
+    def insert(self, index, elem):
+        """
+        Method to insert a new proposal at specified position {index}
+
+        :param index: The index where we want to insert the new element
+        :param elem: The new proposal that we want to add
+
+        :type index: int
+        :type elem: Proposal
+        """
+        if not isinstance(elem, Proposal):
+            raise ValueError(
+                f"The new element type expected is Proposal, not {type(elem)}")
+        return super().insert(index, elem)
+
+    def save(self, file_path):
+        """
+        Method to save this instance of list of proposal
+
+        :param file_path: The path to file where you want to save data
+          of this list
+        :type file_path: `str`
+        """
+        ...
+
+    def load(self, file_path):
+        """
+        Method to load data from file and to fill list of proposal
+        of this instance
+
+        :param file_path: The path to file where you want to save data
+          of this list
+        :type file_path: `str`
+        """
+        ...
+
+    def validate(self, solution):
+        """
+        
+        """
+
+
 def get_exocode_example():
     language = "C"
     source_code = """
@@ -360,12 +454,21 @@ def get_menu():
     return string
 
 
+def clt():
+    """
+    Function to clear terminal
+    """
+    os.system("clear")
+
+
 def describe_exocode(args):
     """
     Function to describe exocode given
     """
     exocode = get_exocode_example()
     memu_str = get_menu()
+    clt()
+    print(f"\033[42m{exocode.language.upper()} \033[0m CODE:\n")
     print(exocode.source_code_str())
     print("\n\n")
     print("List of target variables to monitor:")
