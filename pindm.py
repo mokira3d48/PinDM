@@ -214,6 +214,23 @@ __version__ = '0.1.0'
 __author__ = 'Dr Mokira'
 
 import os
+import json
+import base64
+import logging
+from argparse import ArgumentParser, FileType
+from typing import BinaryIO
+
+# Set up logging
+logging.basicConfig(
+    level=logging.INFO,
+    # format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    format="%(levelname)s - %(message)s",
+    handlers=[
+        logging.FileHandler("od_dihv.log"),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger('PinDM')
 
 
 class Exocode:
@@ -224,25 +241,176 @@ class Exocode:
     :arg language: The programming language used in source code
     :arg source_code: The string of the source code written
       in the programming language specified
+    :arg target_vars: The target variable whose values will be monitored
     :arg solution: The expected debugging solution for this source code
 
     :type language: `str`
     :type source_code: `str`
     :type solution: `typing.Dict[str, list]`
     """
-    def __init__(self, language, source_code, solution):
-        self.language = language
-        self.source_code = source_code
+    def __init__(self, language, source_code, target_vars, solution):
+        self.language = language.strip()
+        self.source_code = source_code.strip()
+        self.target_vars = target_vars
         self.solution = solution
 
+    class FileLoadError(Exception):
+        """
+        When an error occurs while loading the exocode file.
+        """
+        ...
 
+    @classmethod
+    def load(cls, input_file):
+        """
+        Static method to load exocode from file
+
+        :param input_file: The file that contents the exocode data
+        :returns: An instance of exocode carrying the information
+          loaded from file.
+
+        :type input_file: `str` | typing.BinaryIO
+        :rtype: Exocode
+        """
+        try:
+            f = (
+                input_file if not isinstance(input_file, str)
+                else open(input_file, mode='rb'))
+
+            encoded_content = f.read()
+            f.close()
+
+            decoded_content = base64.b64decode(encoded_content)
+            jsonify_content = decoded_content.decode(encoding='utf-8')
+
+            data = json.loads(jsonify_content)
+            language = data.get('language')
+            source_code = data.get('source_code')
+            solution = data.get('solution')
+
+            instance = cls(language, source_code, solution)
+
+            return instance
+        except Exception as e:
+            message = f"{e.__class__.__name__}: {e.args[0]}"
+            raise cls.FileLoadError(message)
+
+    def source_code_str(self):
+        """
+        This function returns the source code in formatted string
+
+        :rtype: `str`
+        """
+        string = ''
+        sc_lines = self.source_code.split('\n')
+        for i, line in enumerate(sc_lines):
+            string += f"\033[91m{i+1:02d}\033[0m {line}\n"
+        return string
+
+    def target_vars_str(self):
+        """
+        This function returns the list of target variables
+        in formatted string
+
+        :rtype: `str`
+        """
+        string = ''
+        for i, varname in enumerate(self.target_vars):
+            string += f"{i + 1}. {varname}\n"
+        return string
+
+    def __str__(self):
+        return self.source_code_str() + "\n\n" + self.target_vars_str()
+
+
+def get_exocode_example():
+    language = "C"
+    source_code = """
+#include <stdlib.h>
+#include <stdio.h>
+
+
+void main(int argc, char** argv) {
+    int age = 0;
+    printf("Hello world!");
+    printf("Enter your age.");
+    scanf("%d", &age);
+    
+    printf("Your age is %d years old.", age);
+    return 0;
+}
+"""
+    target_vars = ['i']
+    return Exocode(language, source_code, target_vars, {})
+
+
+def get_menu():
+    string = """
++-----------------------------------------------------------------------------+
+|                             PinDM Menu                                      |
++-----------------------------------------------------------------------------+
+|                                                                             |
+|        * "i" or "insert" -> INSERT NEW;                                     |
+|        * "s" or "select" -> SHOW INDEXED LINE;                              |
+|        * "u" or "update" -> UPDATE INDEXED LINE;                            |
+|        * "d" or "delete" -> DELETE INDEXED LINE.                            |
+|                                                                             |
++-----------------------------------------------------------------------------+
+"""
+    return string
+
+
+def describe_exocode(args):
+    """
+    Function to describe exocode given
+    """
+    exocode = get_exocode_example()
+    memu_str = get_menu()
+    print(exocode.source_code_str())
+    print("\n\n")
+    print("List of target variables to monitor:")
+    print(exocode.target_vars_str())
+    print(memu_str)
+
+
+def train_on_exocode(args):
+    """
+    Function to run training process on given exocode
+    """
+    ...
+
+
+features = {"describe": describe_exocode,
+            "train": train_on_exocode}
+
+
+def get_argument():
+    """
+    Function to parse command line arguments
+
+    :rtype: argparse.Namespace
+    """
+    parser = ArgumentParser(prog="PinDM")
+    parser.add_argument("action", type=str, choices=list(features.keys()))
+    # parser.add_argument(
+    #     "exocode", type=FileType(mode='rb'),
+    #     help="Exocode file")
+    parser.add_argument("-o", "--output", type=str, default="outputs")
+    args = parser.parse_args()
+    return args
 
 
 def main():
     """
     Main function to run this program
     """
-    ...
+    args = get_argument()
+    action = args.action
+    function = features.get(action)
+    if not function:
+        print("This feature is not supported yet.")
+        exit(0)
+    function(args)
 
 
 if __name__ == '__main__':
@@ -252,7 +420,3 @@ if __name__ == '__main__':
     except KeyboardInterrupt:
         print("Good bye! I hope, see you next time.")
         exit(125)
-
-        
-
-
