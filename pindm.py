@@ -216,6 +216,28 @@ __author__ = 'Dr Mokira'
 import os
 
 
+class Exocode:
+    """
+    The exocode represents an exercise and its solution. Each exercise
+    can be saved and loaded from a binary file.
+
+    :arg language: The programming language used in source code
+    :arg source_code: The string of the source code written
+      in the programming language specified
+    :arg solution: The expected debugging solution for this source code
+
+    :type language: `str`
+    :type source_code: `str`
+    :type solution: `typing.Dict[str, list]`
+    """
+    def __init__(self, language, source_code, solution):
+        self.language = language
+        self.source_code = source_code
+        self.solution = solution
+
+
+
+
 def main():
     """
     Main function to run this program
