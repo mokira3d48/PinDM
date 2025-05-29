@@ -218,19 +218,149 @@ import json
 import base64
 import logging
 from argparse import ArgumentParser, FileType
-from dataclasses import dataclass
+
+from flask import Flask, render_template
 
 # Set up logging
 logging.basicConfig(
     level=logging.INFO,
     # format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    format="%(levelname)s - %(message)s",
+    format="\033[93m%(levelname)s\033[0m - %(message)s",
     handlers=[
-        logging.FileHandler("od_dihv.log"),
+        logging.FileHandler("pindm.log"),
         logging.StreamHandler()
     ]
 )
 logger = logging.getLogger('PinDM')
+app = Flask(__name__)
+
+
+class Exec:
+    """
+    Proposal definition
+    -------------------
+
+    :arg lineno: The number the code line
+    :arg values: The dictionary of variable names, each associated
+      with its value
+
+    :type lineno: int
+    :type values: object
+    """
+    def __init__(self, lineno, **values):
+        self.lineno = lineno
+        self.__dict__.update(**values)
+
+    @property
+    def variables(self):
+        """
+        :returns: Data dict of values proposed for each variable
+        :rtype: typing.Dict[str, object]
+        """
+        return {
+            key:val for key, val in self.__dict__.items() if key != "lineno"}
+
+
+def _exec_data_iteration(src):
+    columns = list(src.values())
+
+    # Length of one column represents number of rows
+    num_rows = len(columns[0])
+
+    for i in range(num_rows):
+        row_data = {}
+        for var_name in src:
+            row_data[var_name] = src[var_name][i]
+        yield row_data
+
+
+class SequenceOfExec(list):
+    """
+    Sequence of execution
+
+    :arg var_names: The list of variable names
+    :type var_names: list of str
+    """
+    def __init__(self, var_names):
+        super().__init__([])
+        if not var_names:
+            raise ValueError("Unexpected a empty list of variable names")
+        self.var_names = var_names
+        self.max_string_length = -float("inf")
+
+    def _reg_max_string_length(self, exec_instance):
+        for value in exec_instance.variables.values():
+            str_length = len(value)
+            if str_length > self.max_string_length:
+                self.max_string_length = str_length
+
+    def append(self, elem):
+        """
+        :param elem: The new instance of Exec
+        :type elem: `Exec`
+        """
+        # for var_name in self.var_names:
+        #     if var_name in elem.variables:
+        #         continue
+        self._reg_max_string_length(elem)
+        super().append(elem)
+
+    def insert(self, __index, __object):
+        """
+        :param __index: The index of the new execution
+        :param __object: The instance of new Exec
+
+        :type __index: `int`
+        :type __object: `Exec`
+        """
+        # for var_name in self.var_names:
+        #     if var_name in __object.variables:
+        #         continue
+        #     __object.variables[var_name] = None
+        self._reg_max_string_length(__object)
+        super().insert(__index, __object)
+
+    def __setitem__(self, key, value):
+        self._reg_max_string_length(value)
+        super().__setitem__(key, value)
+
+    def __contains__(self, item):
+        search_lineno = item.lineno
+        for elem in self:
+            if search_lineno == elem.lineno:
+                return True
+        return False
+
+    def load_state_dict(self, src):
+        """
+        Method to load sequence of executions from dictionary
+
+        :param src: The instance of dictionary that contents name of columns
+          mapped with lists of string representing the rows
+        :type src: dict of list
+        """
+        exec_data_iter = _exec_data_iteration(src)
+        for exec_data in exec_data_iter:
+            if 'lineno' not in exec_data:
+                raise ValueError("The lineno value is missing")
+            lineno = exec_data['lineno']
+            del exec_data['lineno']
+            exec_inst = Exec(lineno, **exec_data)
+            self.append(exec_inst)
+
+
+def test_sequence_of_chaine():
+    seq_of_ex = SequenceOfExec(["var1", "var2", "var3"])
+    exec1 = Exec(12, var3="23", var1="\"coca21\"")
+    exec2 = Exec(13, var2="23", var3="\"coca1\"")
+    exec3 = Exec(14, var1="23", var2="\"coca\"")
+
+    seq_of_ex.append(exec1)
+    seq_of_ex.append(exec2)
+    seq_of_ex.append(exec3)
+
+    assert seq_of_ex.max_string_length == 8
+    assert len(seq_of_ex) == 3
 
 
 class Exocode:
@@ -246,7 +376,7 @@ class Exocode:
 
     :type language: `str`
     :type source_code: `str`
-    :type solution: `typing.Dict[str, list]`
+    :type solution: `SequenceOfExec`
     """
     def __init__(self, language, source_code, target_vars, solution):
         self.language = language.strip()
@@ -286,9 +416,14 @@ class Exocode:
             data = json.loads(jsonify_content)
             language = data.get('language')
             source_code = data.get('source_code')
-            solution = data.get('solution')
+            target_vars = data.get('target_vars')
 
-            instance = cls(language, source_code, solution)
+            solution = data.get('solution')
+            sequence_of_exec = SequenceOfExec(target_vars)
+            sequence_of_exec.load_state_dict(solution)
+
+            instance = cls(
+                language, source_code, target_vars, sequence_of_exec)
 
             return instance
         except Exception as e:
@@ -304,7 +439,7 @@ class Exocode:
         string = ''
         sc_lines = self.source_code.split('\n')
         for i, line in enumerate(sc_lines):
-            string += f"\033[91m{i+1:02d}\033[0m {line}\n"
+            string += "  " + f"\033[91m{i+1:02d}\033[0m {line}\n"
         return string
 
     def target_vars_str(self):
@@ -316,105 +451,77 @@ class Exocode:
         """
         string = ''
         for i, varname in enumerate(self.target_vars):
-            string += f"{i + 1}. {varname}\n"
+            string += "  " + f"{i + 1}. {varname}\n"
         return string
 
     def __str__(self):
         return self.source_code_str() + "\n\n" + self.target_vars_str()
 
 
-class Proposal:
+def validation(proposal, solution):
     """
-    Proposal definition
-    -------------------
+    Function to validate proposal according solution
 
-    :arg lino: The number the code line
-    :arg values: The dictionary of variable names, each associated
-      with its value
+    :param proposal: The solution proposed by the programmer
+    :param solution: The solution expected
+    :returns: The calculated metric of appreciation.
 
-    :type lino: int
-    :type values: typing.Dict[str, object]
+    :type proposal:`SequenceOfExec`
+    :type solution: `SequenceOfExec`
+    :rtype: dict
     """
-    def __init__(self, lino, **values):
-        self.lino = lino
-        self.__dict__.update(**values)
+    precision = 0.0
+    recall = 0.0
 
-    @property
-    def data(self):
-        """
-        :returns: Data dict of values proposed for each variable
-        :rtype: typing.Dict[str, object]
-        """
-        return self.__dict__
+    for s in solution:
+        if s in proposal:
+            recall += 1
+    for p, s in zip(proposal, solution):
+        if p.lineno != s.lineno:
+            continue
+        all_var_are_equals = True
+        for var_name in s.variables:
+            if p.variables[var_name] == s.variables[var_name]:
+                continue
+            all_var_are_equals = False
+        if all_var_are_equals:
+            precision += 1
+
+    max_length = max(len(proposal), len(solution))
+    precision = precision / max_length
+    recall = recall / len(solution)
+    f1_score = 2 * precision * recall / (precision + recall)
+    return {
+        'precision': precision,
+        'recall': recall,
+        'f1_score': f1_score}
 
 
-@dataclass
-class Metric:
-    precision = 0
-    recall = 0
+def test_validation_function():
+    solution = SequenceOfExec(["var1", "var2", "var3"])
+    solution.append(Exec(12, var3="23", var1="\"coca21\""))
+    solution.append(Exec(13, var2="23", var3="\"coca1\""))
+    solution.append(Exec(14, var1="23", var2="\"coca\""))
 
+    proposal = SequenceOfExec(["var1", "var2", "var3"])
+    proposal.append(Exec(12, var3="23", var1="\"coca21\""))
+    proposal.append(Exec(13, var2="23", var3="\"coca1\""))
+    proposal.append(Exec(14, var1="23", var2="\"coca\""))
 
-class ProposalList(list):
-    """
-    List of proposal
-    ----------------
-    """
-    def __init__(self):
-        super().__init__()
-        self.metric = None
+    results = validation(proposal, solution)
+    assert results['precision'] == 1.0
+    assert results['recall'] == 1.0
+    assert results['f1_score'] == 1.0
 
-    def append(self, elem):
-        """
-        Method to append a new proposal
+    proposal = SequenceOfExec(["var1", "var2", "var3"])
+    proposal.append(Exec(10, var3="23", var1="\"coca21\""))
+    proposal.append(Exec(13, var2="23", var3="\"coca1\""))
+    proposal.append(Exec(14, var1="23", var2="\"coca\""))
 
-        :param elem: The new proposal that we want to add
-        :type elem: Proposal
-        """
-        if not isinstance(elem, Proposal):
-            raise ValueError(
-                f"The new element type expected is Proposal, not {type(elem)}")
-        return super().append(elem)
-
-    def insert(self, index, elem):
-        """
-        Method to insert a new proposal at specified position {index}
-
-        :param index: The index where we want to insert the new element
-        :param elem: The new proposal that we want to add
-
-        :type index: int
-        :type elem: Proposal
-        """
-        if not isinstance(elem, Proposal):
-            raise ValueError(
-                f"The new element type expected is Proposal, not {type(elem)}")
-        return super().insert(index, elem)
-
-    def save(self, file_path):
-        """
-        Method to save this instance of list of proposal
-
-        :param file_path: The path to file where you want to save data
-          of this list
-        :type file_path: `str`
-        """
-        ...
-
-    def load(self, file_path):
-        """
-        Method to load data from file and to fill list of proposal
-        of this instance
-
-        :param file_path: The path to file where you want to save data
-          of this list
-        :type file_path: `str`
-        """
-        ...
-
-    def validate(self, solution):
-        """
-        
-        """
+    results = validation(proposal, solution)
+    assert results['precision'] == 0.6666666666666666
+    assert results['recall'] == 0.6666666666666666
+    assert results['f1_score'] == 0.6666666666666666
 
 
 def get_exocode_example():
@@ -435,7 +542,8 @@ void main(int argc, char** argv) {
 }
 """
     target_vars = ['i']
-    return Exocode(language, source_code, target_vars, {})
+    return Exocode(
+        language, source_code, target_vars, SequenceOfExec(target_vars))
 
 
 def get_menu():
@@ -468,12 +576,12 @@ def describe_exocode(args):
     exocode = get_exocode_example()
     memu_str = get_menu()
     clt()
-    print(f"\033[42m{exocode.language.upper()} \033[0m CODE:\n")
+    print(memu_str)
+    print(f"\033[42m\033[91m{exocode.language.upper()} \033[0m CODE:\n")
     print(exocode.source_code_str())
     print("\n\n")
     print("List of target variables to monitor:")
     print(exocode.target_vars_str())
-    print(memu_str)
 
 
 def train_on_exocode(args):
