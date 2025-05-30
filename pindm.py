@@ -225,7 +225,7 @@ from flask import Flask, render_template
 logging.basicConfig(
     level=logging.INFO,
     # format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    format="\033[93m%(levelname)s\033[0m - %(message)s",
+    format="%(name)s - \033[96m%(levelname)s\033[0m - %(message)s",
     handlers=[
         logging.FileHandler("pindm.log"),
         logging.StreamHandler()
@@ -602,11 +602,13 @@ def get_argument():
     :rtype: argparse.Namespace
     """
     parser = ArgumentParser(prog="PinDM")
-    parser.add_argument("action", type=str, choices=list(features.keys()))
+    # parser.add_argument("action", type=str, choices=list(features.keys()))
     # parser.add_argument(
     #     "exocode", type=FileType(mode='rb'),
     #     help="Exocode file")
     parser.add_argument("-o", "--output", type=str, default="outputs")
+    parser.add_argument('--host', type=str, default='0.0.0.0')
+    parser.add_argument('--port', type=int, default=5000)
     args = parser.parse_args()
     return args
 
@@ -616,12 +618,23 @@ def main():
     Main function to run this program
     """
     args = get_argument()
-    action = args.action
-    function = features.get(action)
-    if not function:
-        print("This feature is not supported yet.")
-        exit(0)
-    function(args)
+
+    @app.route('/')
+    def show_training_page():
+        """
+        Render the web page of training
+        """
+        return render_template('index.html')
+
+    # action = args.action
+    # function = features.get(action)
+    # if not function:
+    #     print("This feature is not supported yet.")
+    #     exit(0)
+    # function(args)
+
+    # app.run(debug=True, host='0.0.0.0', port=5000)
+    app.run(host=args.host, port=args.port)
 
 
 if __name__ == '__main__':
